@@ -40,7 +40,8 @@ assets/schematics/           final schematic Figures 1--3
 
 ## Installation
 
-Python 3.10 or later is recommended.
+Python 3.11 or later is required.
+The automated test suite is run on Python 3.11 and 3.12.
 
 ```bash
 python -m venv .venv
