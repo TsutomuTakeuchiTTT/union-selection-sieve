@@ -1,0 +1,20 @@
+{
+  "title": "Union-selection conditional-likelihood rectangular-sieve estimator",
+  "upload_type": "software",
+  "description": "Reference implementation accompanying the manuscript Bivariate Distribution Estimation under Truncation and One-Sided Censoring: A Conditional-Likelihood Sieve Method for Union-Selected Samples.",
+  "creators": [
+    {
+      "name": "Takeuchi, Tsutomu T.",
+      "orcid": "0000-0001-8416-7673",
+      "affiliation": "Nagoya University; Institute of Statistical Mathematics"
+    }
+  ],
+  "license": "BSD-3-Clause",
+  "keywords": [
+    "conditional likelihood",
+    "truncation",
+    "one-sided censoring",
+    "bivariate distribution",
+    "sieve estimation"
+  ]
+}

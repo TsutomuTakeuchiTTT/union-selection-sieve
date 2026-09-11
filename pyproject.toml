@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "union-selection-sieve"
+version = "1.0.0"
+description = "Conditional-likelihood rectangular-sieve estimation for bivariate union-selected samples"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Tsutomu T. Takeuchi", email = "tsutomu.takeuchi.ttt@gmail.com"}
+]
+keywords = [
+  "truncation", "censoring", "conditional likelihood", "sieve estimation",
+  "bivariate distribution", "survival analysis", "luminosity function"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Mathematics"
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=1.5",
+  "scipy>=1.10"
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+dev = [
+  "matplotlib>=3.7",
+  "pytest>=7.4",
+  "jupyter>=1.0",
+  "nbformat>=5.9"
+]
+
+[project.urls]
+Repository = "https://github.com/TsutomuTakeuchiTTT/union-selection-sieve"
+Issues = "https://github.com/TsutomuTakeuchiTTT/union-selection-sieve/issues"
+
+[project.scripts]
+union-selection-fit = "union_selection_sieve.cli:fit_csv"
+union-selection-demo = "union_selection_sieve.cli:demo"
+union-selection-confirmatory = "union_selection_sieve.cli:confirmatory"
+union-selection-self-test = "union_selection_sieve.cli:self_test"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

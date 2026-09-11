@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "Please cite this software and the accompanying manuscript."
+title: "Union-selection conditional-likelihood rectangular-sieve estimator"
+type: software
+authors:
+  - family-names: "Takeuchi"
+    given-names: "Tsutomu T."
+    orcid: "https://orcid.org/0000-0001-8416-7673"
+version: "1.0.0"
+date-released: "2026-09-11"
+repository-code: "https://github.com/TsutomuTakeuchiTTT/union-selection-sieve"
+license: "BSD-3-Clause"
+abstract: >-
+  Reference implementation of a bivariate conditional-likelihood rectangular-sieve
+  estimator for samples included when at least one coordinate exceeds its
+  object-specific threshold, with one-sided censoring of a nondetected coordinate.
+keywords:
+  - conditional likelihood
+  - truncation
+  - one-sided censoring
+  - bivariate distribution
+  - sieve estimation
+  - survival analysis
