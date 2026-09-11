@@ -1,0 +1,818 @@
+--- /mnt/data/union_selection_sieve_confirmatory_monte_carlo_v1_onecell/union_selection_sieve_confirmatory_monte_carlo_v1_onecell.py	2026-09-06 22:50:37.982342438 +0000
++++ /mnt/data/union_selection_sieve_confirmatory_monte_carlo_v1_1_onecell/union_selection_sieve_confirmatory_monte_carlo_v1_1_onecell.py	2026-09-06 23:01:14.706101170 +0000
+@@ -15,7 +15,7 @@
+ mixture is used only for held-out and population log scoring; it never changes
+ the fitted full-sample distribution.
+ 
+-Code version: union-selection-sieve-confirmatory-monte-carlo-v1.0.0-onecell
++Code version: union-selection-sieve-confirmatory-monte-carlo-v1.1.0-onecell
+ """
+ from __future__ import annotations
+ 
+@@ -28,7 +28,7 @@
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from pathlib import Path
+-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
++from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+ 
+ import numpy as np
+ import pandas as pd
+@@ -43,7 +43,7 @@
+         "bivariate-normal benchmark. Install scipy in the active Jupyter kernel."
+     ) from exc
+ 
+-CODE_VERSION = "union-selection-sieve-cross-validation-v1.1.0-onecell"
++CODE_VERSION = "union-selection-sieve-core-v1.1.0-onecell"
+ 
+ 
+ # =============================================================================
+@@ -2012,8 +2012,26 @@
+     mm_prepolish_iterations: int = 1500,
+     newton_tolerance: float = 1e-11,
+     polish_zero_tolerance: float = 1e-12,
++    max_polish_cycles: int = 8,
+ ) -> ActiveSetMMFit:
+-    """MM active-set fit followed, when needed, by SLSQP and Newton polishing."""
++    """Fit on the simplex with MM and repeated active-face polishing.
++
++    The Version 1.0 control flow performed one SLSQP polish followed by one
++    projected-Newton pass.  A Newton pass may activate a previously inactive
++    class.  In that event the SLSQP solution belongs to the old active face and
++    need not satisfy the KKT equations on the enlarged face.  Version 1.1
++    therefore repeats
++
++        active-face SLSQP -> projected Newton -> full KKT audit
++
++    until the active set has stabilised and the requested KKT tolerance is met,
++    or until ``max_polish_cycles`` is exhausted.  No statistical criterion,
++    likelihood, support, or analysis rule is changed by this numerical fix.
++    """
++    max_polish_cycles = int(max_polish_cycles)
++    if max_polish_cycles < 1:
++        raise ValueError("max_polish_cycles must be at least one")
++
+     mm_limit = min(int(max_iterations), int(mm_prepolish_iterations))
+     base = fit_active_set_mm(
+         a,
+@@ -2032,57 +2050,177 @@
+             {
+                 "hybrid_polish_used": False,
+                 "mm_prepolish_iteration_limit": mm_limit,
++                "polish_cycles": 0,
++                "polish_max_cycles": max_polish_cycles,
++                "polish_active_set_change_cycles": 0,
++                "polish_active_set_stable_at_exit": True,
++                "polish_termination_reason": "MM_satisfied_KKT",
+                 "polish_slsqp_success": True,
+                 "polish_slsqp_iterations": 0,
++                "polish_total_slsqp_iterations": 0,
+                 "polish_newton_steps": 0,
++                "polish_total_newton_steps": 0,
++                "polish_activation_events": 0,
++                "polish_total_activation_events": 0,
++                "polish_projected_gradient_residual": float(
++                    base.diagnostics["active_score_sup_abs_residual"]
++                ),
+                 "polish_loglikelihood_increment": 0.0,
++                "polish_cycle_records": [],
+             }
+         )
+         return base
+ 
+-    ll_before = conditional_loglikelihood(base.mass, a, b, row_weights)
+-    polished, slsqp_diag = _local_slsqp_on_active_face(
+-        base.mass, base.active_mask, a, b, row_weights
+-    )
+-    active = base.active_mask.copy()
++    initial_ll = conditional_loglikelihood(base.mass, a, b, row_weights)
++    polished = np.asarray(base.mass, dtype=float).copy()
++    active = np.asarray(base.active_mask, dtype=bool).copy()
+     active |= polished > polish_zero_tolerance
+-    polished, active, newton_diag = _newton_refine_active_face(
+-        polished,
+-        active,
+-        a,
+-        b,
+-        row_weights,
+-        tolerance=newton_tolerance,
+-        zero_tolerance=polish_zero_tolerance,
+-    )
+-    ll_after = conditional_loglikelihood(polished, a, b, row_weights)
+-    if ll_after < ll_before - 1e-10:
+-        raise RuntimeError("hybrid polishing materially decreased the likelihood")
++
++    cycle_records: List[Dict[str, Any]] = []
++    event_rows: List[Dict[str, Any]] = []
++    all_slsqp_success = True
++    total_slsqp_iterations = 0
++    total_newton_steps = 0
++    total_activation_events = 0
++    active_set_change_cycles = 0
++    last_slsqp_diag: Dict[str, Any] = {
++        "success": False,
++        "status": -1,
++        "message": "not run",
++        "iterations": 0,
++        "active_face_size": int(active.sum()),
++    }
++    last_newton_diag: Dict[str, Any] = {
++        "newton_steps": 0,
++        "activation_events": 0,
++        "projected_gradient_residual": math.inf,
++        "last_line_search_steps": 0,
++        "active_score_residual": math.inf,
++        "inactive_positive_score_violation": math.inf,
++    }
+     final_kkt = kkt_diagnostics(
+         polished, a, b, row_weights, active_tolerance=polish_zero_tolerance
+     )
+-    hdiag = projected_hessian_diagnostics(
+-        polished, a, b, row_weights, active_tolerance=polish_zero_tolerance
+-    )
+-    converged = bool(
+-        final_kkt["active_score_sup_abs_residual"] < score_tolerance
+-        and final_kkt["inactive_positive_score_violation"] < score_tolerance
+-    )
+-    events = base.events.copy()
+-    polish_event = pd.DataFrame(
+-        [
++    converged = False
++    termination_reason = "maximum_polish_cycles_exhausted"
++    previous_ll = initial_ll
++    final_active_stable = False
++
++    for cycle in range(1, max_polish_cycles + 1):
++        active_before = active.copy()
++        n_active_before = int(active_before.sum())
++        ll_cycle_before = conditional_loglikelihood(polished, a, b, row_weights)
++
++        polished, slsqp_diag = _local_slsqp_on_active_face(
++            polished, active, a, b, row_weights
++        )
++        last_slsqp_diag = dict(slsqp_diag)
++        all_slsqp_success = bool(all_slsqp_success and slsqp_diag["success"])
++        total_slsqp_iterations += max(int(slsqp_diag["iterations"]), 0)
++        active |= polished > polish_zero_tolerance
++        n_active_after_slsqp = int(active.sum())
++
++        polished, active, newton_diag = _newton_refine_active_face(
++            polished,
++            active,
++            a,
++            b,
++            row_weights,
++            tolerance=newton_tolerance,
++            zero_tolerance=polish_zero_tolerance,
++        )
++        last_newton_diag = dict(newton_diag)
++        total_newton_steps += int(newton_diag["newton_steps"])
++        total_activation_events += int(newton_diag["activation_events"])
++
++        ll_cycle_after = conditional_loglikelihood(polished, a, b, row_weights)
++        if ll_cycle_after < ll_cycle_before - 1e-10:
++            raise RuntimeError(
++                "hybrid polishing materially decreased the likelihood in "
++                f"cycle {cycle}: {ll_cycle_after - ll_cycle_before:.3e}"
++            )
++        if ll_cycle_after < previous_ll - 1e-10:
++            raise RuntimeError(
++                "hybrid polishing decreased the likelihood relative to the "
++                f"preceding cycle {cycle}: {ll_cycle_after - previous_ll:.3e}"
++            )
++        previous_ll = ll_cycle_after
++
++        final_kkt = kkt_diagnostics(
++            polished, a, b, row_weights, active_tolerance=polish_zero_tolerance
++        )
++        active_changed = bool(not np.array_equal(active, active_before))
++        if active_changed:
++            active_set_change_cycles += 1
++        final_active_stable = not active_changed
++        cycle_converged = bool(
++            final_kkt["active_score_sup_abs_residual"] < score_tolerance
++            and final_kkt["inactive_positive_score_violation"] < score_tolerance
++        )
++
++        cycle_record = {
++            "polish_cycle": int(cycle),
++            "loglikelihood_before": float(ll_cycle_before),
++            "loglikelihood_after": float(ll_cycle_after),
++            "loglikelihood_increment": float(ll_cycle_after - ll_cycle_before),
++            "n_active_before": n_active_before,
++            "n_active_after_slsqp": n_active_after_slsqp,
++            "n_active_after_newton": int(active.sum()),
++            "active_set_changed": active_changed,
++            "slsqp_success": bool(slsqp_diag["success"]),
++            "slsqp_status": int(slsqp_diag["status"]),
++            "slsqp_message": str(slsqp_diag["message"]),
++            "slsqp_iterations": int(slsqp_diag["iterations"]),
++            "newton_steps": int(newton_diag["newton_steps"]),
++            "newton_activation_events": int(newton_diag["activation_events"]),
++            "newton_projected_gradient_residual": float(
++                newton_diag["projected_gradient_residual"]
++            ),
++            "active_score_residual": float(
++                final_kkt["active_score_sup_abs_residual"]
++            ),
++            "inactive_positive_score_violation": float(
++                final_kkt["inactive_positive_score_violation"]
++            ),
++            "cycle_satisfied_KKT": cycle_converged,
++        }
++        cycle_records.append(cycle_record)
++        event_rows.append(
+             {
+-                "outer_iteration": int(base.diagnostics["outer_iterations"]) + 1,
+-                "event": "hybrid_polish",
++                "outer_iteration": int(base.diagnostics["outer_iterations"]) + cycle,
++                "event": "hybrid_polish_cycle",
+                 "class_index": -1,
+                 "mass_before": math.nan,
+-                "score_before": float(base.diagnostics["active_score_sup_abs_residual"]),
+-                "loglik_increment": float(ll_after - ll_before),
+-                "n_active_after": int(np.sum(polished > polish_zero_tolerance)),
++                "score_before": float(cycle_record["active_score_residual"]),
++                "loglik_increment": float(cycle_record["loglikelihood_increment"]),
++                "n_active_after": int(active.sum()),
+             }
+-        ]
++        )
++
++        if cycle_converged:
++            converged = True
++            termination_reason = (
++                "KKT_satisfied_after_stable_active_face"
++                if final_active_stable
++                else "KKT_satisfied_after_active_set_change"
++            )
++            break
++
++        # The key Version 1.1 behaviour is to continue after an active-set
++        # change.  The next cycle reruns SLSQP on the newly enlarged/reduced
++        # face before another Newton/KKT audit.
++
++    ll_after = conditional_loglikelihood(polished, a, b, row_weights)
++    if ll_after < initial_ll - 1e-10:
++        raise RuntimeError("hybrid polishing materially decreased the likelihood")
++
++    hdiag = projected_hessian_diagnostics(
++        polished, a, b, row_weights, active_tolerance=polish_zero_tolerance
+     )
+-    events = pd.concat([events, polish_event], ignore_index=True)
++    events = pd.concat(
++        [base.events, pd.DataFrame(event_rows)], ignore_index=True
++    ) if event_rows else base.events.copy()
++
+     diagnostics = dict(base.diagnostics)
+     diagnostics.update(
+         {
+@@ -2098,16 +2236,26 @@
+             **hdiag,
+             "hybrid_polish_used": True,
+             "mm_prepolish_iteration_limit": mm_limit,
+-            "polish_slsqp_success": bool(slsqp_diag["success"]),
+-            "polish_slsqp_status": int(slsqp_diag["status"]),
+-            "polish_slsqp_message": slsqp_diag["message"],
+-            "polish_slsqp_iterations": int(slsqp_diag["iterations"]),
+-            "polish_newton_steps": int(newton_diag["newton_steps"]),
+-            "polish_activation_events": int(newton_diag["activation_events"]),
++            "polish_cycles": int(len(cycle_records)),
++            "polish_max_cycles": max_polish_cycles,
++            "polish_active_set_change_cycles": int(active_set_change_cycles),
++            "polish_active_set_stable_at_exit": bool(final_active_stable),
++            "polish_termination_reason": termination_reason,
++            "polish_slsqp_success": bool(all_slsqp_success),
++            "polish_slsqp_status": int(last_slsqp_diag["status"]),
++            "polish_slsqp_message": str(last_slsqp_diag["message"]),
++            "polish_slsqp_iterations": int(total_slsqp_iterations),
++            "polish_last_slsqp_iterations": int(last_slsqp_diag["iterations"]),
++            "polish_total_slsqp_iterations": int(total_slsqp_iterations),
++            "polish_newton_steps": int(total_newton_steps),
++            "polish_total_newton_steps": int(total_newton_steps),
++            "polish_activation_events": int(total_activation_events),
++            "polish_total_activation_events": int(total_activation_events),
+             "polish_projected_gradient_residual": float(
+-                newton_diag["projected_gradient_residual"]
++                last_newton_diag["projected_gradient_residual"]
+             ),
+-            "polish_loglikelihood_increment": float(ll_after - ll_before),
++            "polish_loglikelihood_increment": float(ll_after - initial_ll),
++            "polish_cycle_records": cycle_records,
+         }
+     )
+     return ActiveSetMMFit(
+@@ -2149,6 +2297,7 @@
+     mm_prepolish_iterations: int = 1500,
+     newton_tolerance: float = 1e-11,
+     polish_zero_tolerance: float = 1e-12,
++    max_polish_cycles: int = 8,
+ ) -> StartAuditedSieveFit:
+     reduction = reduce_operator_columns(
+         a, b, row_weights, coverage_tolerance=coverage_tolerance
+@@ -2177,6 +2326,7 @@
+             mm_prepolish_iterations=mm_prepolish_iterations,
+             newton_tolerance=newton_tolerance,
+             polish_zero_tolerance=polish_zero_tolerance,
++            max_polish_cycles=max_polish_cycles,
+         )
+         candidates.append(("projected_warm", warm_fit))
+ 
+@@ -2194,6 +2344,7 @@
+             mm_prepolish_iterations=mm_prepolish_iterations,
+             newton_tolerance=newton_tolerance,
+             polish_zero_tolerance=polish_zero_tolerance,
++            max_polish_cycles=max_polish_cycles,
+         )
+         candidates.append(("uniform_cold", cold_fit))
+ 
+@@ -2215,6 +2366,8 @@
+                 "active_score_residual": float(fit.diagnostics["active_score_sup_abs_residual"]),
+                 "inactive_positive_score_violation": float(fit.diagnostics["inactive_positive_score_violation"]),
+                 "hybrid_polish_used": bool(fit.diagnostics.get("hybrid_polish_used", False)),
++                "polish_cycles": int(fit.diagnostics.get("polish_cycles", 0)),
++                "polish_active_set_change_cycles": int(fit.diagnostics.get("polish_active_set_change_cycles", 0)),
+                 "polish_slsqp_iterations": int(fit.diagnostics.get("polish_slsqp_iterations", 0)),
+                 "polish_newton_steps": int(fit.diagnostics.get("polish_newton_steps", 0)),
+                 "polish_loglikelihood_increment": float(fit.diagnostics.get("polish_loglikelihood_increment", 0.0)),
+@@ -3386,10 +3539,12 @@
+             return mass, metadata["fit_diagnostics"], metadata.get("start_records", []), True
+ 
+     a_train, b_train, _ = _build_estimator_operator(observed_train, grid, estimator)
+-    fit = fit_sieve_with_start_audit(
+-        a_train,
+-        b_train,
+-        None,
++    failure_sidecar = _fit_failure_sidecar_path(checkpoint)
++    try:
++        fit = fit_sieve_with_start_audit(
++            a_train,
++            b_train,
++            None,
+         coverage_tolerance=args.coverage_tolerance,
+         mass_tolerance=args.mass_tolerance,
+         score_tolerance=args.score_tolerance,
+@@ -3403,10 +3558,36 @@
+         direct_seed=direct_seed,
+         mm_prepolish_iterations=args.mm_prepolish_iterations,
+         newton_tolerance=args.newton_tolerance,
+-        polish_zero_tolerance=args.polish_zero_tolerance,
+-    )
++            polish_zero_tolerance=args.polish_zero_tolerance,
++            max_polish_cycles=int(getattr(args, "max_polish_cycles", 8)),
++        )
++    except Exception as exc:
++        diagnostic_path = _write_fit_failure_sidecar(
++            checkpoint, identity, "fit_exception",
++            f"{type(exc).__name__}: {exc}", traceback_text=traceback.format_exc()
++        )
++        try:
++            exc.add_note(f"fit diagnostic written to {diagnostic_path}")
++        except AttributeError:
++            pass
++        raise
+     if not fit.selected_fit.converged:
+-        raise RuntimeError("the conditional-likelihood fit did not satisfy the KKT tolerance")
++        mm_diag = fit.selected_fit.diagnostics
++        diagnostic_path = _write_fit_failure_sidecar(
++            checkpoint, identity, "post_fit_KKT_audit",
++            "the conditional-likelihood fit did not satisfy the KKT tolerance",
++            diagnostics=fit.diagnostics
++        )
++        raise RuntimeError(
++            "the conditional-likelihood fit did not satisfy the KKT tolerance; "
++            f"active_residual={float(mm_diag['active_score_sup_abs_residual']):.6e}, "
++            f"inactive_violation={float(mm_diag['inactive_positive_score_violation']):.6e}, "
++            f"polish_cycles={int(mm_diag.get('polish_cycles', 0))}, "
++            f"identity={json.dumps(_jsonable(identity), sort_keys=True)}, "
++            f"diagnostic={diagnostic_path}"
++        )
++    if failure_sidecar.exists():
++        failure_sidecar.unlink()
+     diagnostics = _jsonable(fit.diagnostics)
+     nontrivial_class_indices = [
+         h for h, cls in enumerate(fit.reduction.classes) if len(cls) > 1
+@@ -4402,6 +4583,7 @@
+             "fixed_support_box_known_before_cross_validation": True,
+             "cross_validation_optimality_theorem": False,
+             "sieve_asymptotic_theory": False,
++            "numerical_solver_amendment_only": True,
+         },
+     }
+     _write_json(paths["summary"], summary)
+@@ -4481,6 +4663,7 @@
+     parser.add_argument("--mm-prepolish-iterations", type=int, default=2000)
+     parser.add_argument("--newton-tolerance", type=float, default=1e-12)
+     parser.add_argument("--polish-zero-tolerance", type=float, default=1e-13)
++    parser.add_argument("--max-polish-cycles", type=int, default=8)
+     parser.add_argument("--direct-audit-starts", type=int, default=4)
+     parser.add_argument("--resume", action="store_true")
+     parser.add_argument("--fail-fast", action="store_true")
+@@ -4899,6 +5082,38 @@
+     return model, metadata
+ 
+ 
++
++def _fit_failure_sidecar_path(checkpoint: Path) -> Path:
++    """Return the durable diagnostic path associated with one failed fit."""
++    return checkpoint.with_name(checkpoint.stem + "__failure.json")
++
++
++def _write_fit_failure_sidecar(
++    checkpoint: Path,
++    identity: Mapping[str, Any],
++    stage: str,
++    message: str,
++    diagnostics: Optional[Mapping[str, Any]] = None,
++    traceback_text: Optional[str] = None,
++) -> Path:
++    """Persist fit diagnostics before fail-fast re-raises an exception."""
++    path = _fit_failure_sidecar_path(checkpoint)
++    path.parent.mkdir(parents=True, exist_ok=True)
++    payload: Dict[str, Any] = {
++        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
++        "checkpoint": str(checkpoint),
++        "code_version": TARGET_CODE_VERSION,
++        "identity": _jsonable(dict(identity)),
++        "stage": str(stage),
++        "message": str(message),
++    }
++    if diagnostics is not None:
++        payload["fit_diagnostics"] = _jsonable(dict(diagnostics))
++    if traceback_text is not None:
++        payload["traceback"] = str(traceback_text)
++    _write_json(path, payload)
++    return path
++
+ def _fit_or_load_target_model(
+     checkpoint: Path,
+     configuration_fingerprint: str,
+@@ -4923,27 +5138,60 @@
+             return model
+ 
+     a, b, _ = build_sample_operator(observed_train, grid)
+-    fit = fit_sieve_with_start_audit(
+-        a,
+-        b,
+-        None,
+-        coverage_tolerance=args.coverage_tolerance,
+-        mass_tolerance=args.mass_tolerance,
+-        score_tolerance=args.score_tolerance,
+-        prune_mass_tolerance=args.prune_mass_tolerance,
+-        prune_score_margin=args.prune_score_margin,
+-        max_iterations=args.max_iterations,
+-        warm_original_mass=warm_mass,
+-        run_uniform_audit=run_uniform_audit,
+-        warm_mixing=args.warm_mixing,
+-        direct_starts=direct_starts,
+-        direct_seed=direct_seed,
+-        mm_prepolish_iterations=args.mm_prepolish_iterations,
+-        newton_tolerance=args.newton_tolerance,
+-        polish_zero_tolerance=args.polish_zero_tolerance,
+-    )
++    failure_sidecar = _fit_failure_sidecar_path(checkpoint)
++    try:
++        fit = fit_sieve_with_start_audit(
++            a,
++            b,
++            None,
++            coverage_tolerance=args.coverage_tolerance,
++            mass_tolerance=args.mass_tolerance,
++            score_tolerance=args.score_tolerance,
++            prune_mass_tolerance=args.prune_mass_tolerance,
++            prune_score_margin=args.prune_score_margin,
++            max_iterations=args.max_iterations,
++            warm_original_mass=warm_mass,
++            run_uniform_audit=run_uniform_audit,
++            warm_mixing=args.warm_mixing,
++            direct_starts=direct_starts,
++            direct_seed=direct_seed,
++            mm_prepolish_iterations=args.mm_prepolish_iterations,
++            newton_tolerance=args.newton_tolerance,
++            polish_zero_tolerance=args.polish_zero_tolerance,
++            max_polish_cycles=int(getattr(args, "max_polish_cycles", 8)),
++        )
++    except Exception as exc:
++        diagnostic_path = _write_fit_failure_sidecar(
++            checkpoint,
++            identity,
++            stage="fit_exception",
++            message=f"{type(exc).__name__}: {exc}",
++            traceback_text=traceback.format_exc(),
++        )
++        try:
++            exc.add_note(f"fit diagnostic written to {diagnostic_path}")
++        except AttributeError:
++            pass
++        raise
+     if not fit.selected_fit.converged:
+-        raise RuntimeError("target-audit fit did not satisfy the KKT tolerance")
++        mm_diag = fit.selected_fit.diagnostics
++        diagnostic_path = _write_fit_failure_sidecar(
++            checkpoint,
++            identity,
++            stage="post_fit_KKT_audit",
++            message="target-audit fit did not satisfy the KKT tolerance",
++            diagnostics=fit.diagnostics,
++        )
++        raise RuntimeError(
++            "target-audit fit did not satisfy the KKT tolerance; "
++            f"active_residual={float(mm_diag['active_score_sup_abs_residual']):.6e}, "
++            f"inactive_violation={float(mm_diag['inactive_positive_score_violation']):.6e}, "
++            f"polish_cycles={int(mm_diag.get('polish_cycles', 0))}, "
++            f"identity={json.dumps(_jsonable(identity), sort_keys=True)}, "
++            f"diagnostic={diagnostic_path}"
++        )
++    if failure_sidecar.exists():
++        failure_sidecar.unlink()
+     class_mass = np.asarray(fit.selected_fit.mass, dtype=float)
+     classes = [[int(x) for x in cls] for cls in fit.reduction.classes]
+     nontrivial = [h for h, cls in enumerate(classes) if len(cls) > 1]
+@@ -5085,6 +5333,8 @@
+             "mm_prepolish_iterations": int(args.mm_prepolish_iterations),
+             "newton_tolerance": float(args.newton_tolerance),
+             "polish_zero_tolerance": float(args.polish_zero_tolerance),
++            "max_polish_cycles": int(args.max_polish_cycles),
++            "active_set_repolish_after_change": True,
+         },
+         "support": [GAUSSIAN_LOWER, GAUSSIAN_UPPER],
+         "y_support": GAUSSIAN_Y_SUPPORT.tolist(),
+@@ -6428,7 +6678,7 @@
+ # =============================================================================
+ import os
+ 
+-CONFIRMATORY_CODE_VERSION = "union-selection-sieve-confirmatory-monte-carlo-v1.0.0-onecell"
++CONFIRMATORY_CODE_VERSION = "union-selection-sieve-confirmatory-monte-carlo-v1.1.0-onecell"
+ # Reuse the proven checkpoint readers/writers with a new, frozen code identity.
+ TARGET_CODE_VERSION = CONFIRMATORY_CODE_VERSION
+ CV_CODE_VERSION = CONFIRMATORY_CODE_VERSION
+@@ -6587,6 +6837,8 @@
+             "mm_prepolish_iterations": int(args.mm_prepolish_iterations),
+             "newton_tolerance": float(args.newton_tolerance),
+             "polish_zero_tolerance": float(args.polish_zero_tolerance),
++            "max_polish_cycles": int(args.max_polish_cycles),
++            "active_set_repolish_after_change": True,
+         },
+         "support": [float(GAUSSIAN_LOWER), float(GAUSSIAN_UPPER)],
+         "y_support": GAUSSIAN_Y_SUPPORT.tolist(),
+@@ -6980,6 +7232,102 @@
+     checks["repeat_averaged_cv_selects_higher_score"] = bool(int(selected.iloc[0]["repeat_averaged_cv_selected_bins"]) == 16)
+     details["toy_repeat_averaged_scores"] = avg[["bins_per_axis", "repeat_averaged_mean_logscore"]].to_dict(orient="records")
+ 
++    # Regression for the rare Version 1.0 failure: the first Newton pass
++    # activates a class after SLSQP.  Version 1.1 must rerun SLSQP on the
++    # enlarged face and satisfy the original 1e-9 KKT threshold.
++    regression_seed = 20290933
++    _, regression_observed, _ = simulate_gaussian_catalogue(
++        1500,
++        regression_seed,
++        0.55,
++        GAUSSIAN_LOWER,
++        GAUSSIAN_UPPER,
++        GAUSSIAN_Y_SUPPORT,
++        GAUSSIAN_Y_MASS,
++    )
++    regression_repeat = 2
++    regression_fold = 0
++    regression_fold_seed = int(regression_seed + 700_001 + 7_919 * regression_repeat)
++    regression_fold_ids, _, _ = make_stratified_fold_assignment(
++        regression_observed, 5, regression_fold_seed
++    )
++    regression_train = regression_observed.loc[
++        regression_fold_ids != regression_fold
++    ].copy().reset_index(drop=True)
++    regression_previous_grid: Optional[RectangularGrid] = None
++    regression_previous_mass: Optional[np.ndarray] = None
++    regression_fit: Optional[StartAuditedSieveFit] = None
++    for regression_bins in [12, 16, 20]:
++        regression_grid = make_uniform_grid(regression_bins)
++        regression_warm = (
++            project_rectangular_mass(
++                regression_previous_grid, regression_previous_mass, regression_grid
++            )
++            if regression_previous_grid is not None
++            and regression_previous_mass is not None
++            else None
++        )
++        regression_a, regression_b, _ = build_sample_operator(
++            regression_train, regression_grid
++        )
++        regression_fit = fit_sieve_with_start_audit(
++            regression_a,
++            regression_b,
++            None,
++            coverage_tolerance=1e-15,
++            mass_tolerance=1e-12,
++            score_tolerance=1e-9,
++            prune_mass_tolerance=1e-7,
++            prune_score_margin=1e-7,
++            max_iterations=30000,
++            warm_original_mass=regression_warm,
++            run_uniform_audit=False,
++            warm_mixing=1e-9,
++            direct_starts=0,
++            mm_prepolish_iterations=2000,
++            newton_tolerance=1e-12,
++            polish_zero_tolerance=1e-13,
++            max_polish_cycles=8,
++        )
++        regression_previous_grid = regression_grid
++        regression_previous_mass = regression_fit.original_mass
++    assert regression_fit is not None
++    regression_diag = regression_fit.selected_fit.diagnostics
++    checks["rare_active_set_repolish_regression_converged"] = bool(
++        regression_fit.selected_fit.converged
++        and regression_diag["active_score_sup_abs_residual"] < 1e-9
++        and regression_diag["inactive_positive_score_violation"] < 1e-9
++    )
++    checks["rare_active_set_repolish_regression_exercised"] = bool(
++        regression_diag.get("polish_total_activation_events", 0) >= 1
++        and regression_diag.get("polish_cycles", 0) >= 2
++    )
++    details["rare_active_set_repolish_regression"] = {
++        "training_seed": regression_seed,
++        "repeat": regression_repeat,
++        "fold": regression_fold,
++        "bins_per_axis": 20,
++        "n_training_rows": int(len(regression_train)),
++        "converged": bool(regression_fit.selected_fit.converged),
++        "active_score_residual": float(
++            regression_diag["active_score_sup_abs_residual"]
++        ),
++        "inactive_positive_score_violation": float(
++            regression_diag["inactive_positive_score_violation"]
++        ),
++        "polish_cycles": int(regression_diag.get("polish_cycles", 0)),
++        "polish_total_activation_events": int(
++            regression_diag.get("polish_total_activation_events", 0)
++        ),
++        "polish_total_slsqp_iterations": int(
++            regression_diag.get("polish_total_slsqp_iterations", 0)
++        ),
++        "polish_total_newton_steps": int(
++            regression_diag.get("polish_total_newton_steps", 0)
++        ),
++        "final_loglikelihood": float(regression_diag["final_loglikelihood"]),
++    }
++
+     fake_store = {(0.55, 1000, "ABC_union_sieve", 16): [np.array([0.1, 0.3]), np.array([0.2, 0.4])]}
+     fake_truth = {0.55: np.array([0.15, 0.35])}
+     bv = _cdf_bias_variance_summary(fake_store, fake_truth)
+@@ -7045,6 +7393,15 @@
+         },
+         "interpretation": "descriptive confirmatory Monte Carlo; criteria do not constitute a general optimality theorem",
+         "configuration_fingerprint": fingerprint,
++        "numerical_solver_amendment": {
++            "version": "1.1",
++            "reason": "repeat active-face SLSQP and Newton after an active-set change until the KKT tolerance is met",
++            "statistical_design_changed": False,
++            "estimator_changed": False,
++            "candidate_resolutions_changed": False,
++            "primary_resolution_changed": False,
++            "seed_family_changed": False,
++        },
+     }
+     freeze_path = outdir / "analysis_freeze.json"
+     _write_json(freeze_path, freeze)
+@@ -7227,6 +7584,13 @@
+                             "n_nontrivial_equivalence_classes": int(diagnostics["n_nontrivial_equivalence_classes"]),
+                             "nontrivial_equivalence_class_mass_fraction": float(diagnostics.get("nontrivial_equivalence_class_mass_fraction", 0.0)),
+                             "n_active_classes": int(mm_diag["n_active"]),
++                            "hybrid_polish_used": bool(mm_diag.get("hybrid_polish_used", False)),
++                            "polish_cycles": int(mm_diag.get("polish_cycles", 0)),
++                            "polish_active_set_change_cycles": int(mm_diag.get("polish_active_set_change_cycles", 0)),
++                            "polish_total_activation_events": int(mm_diag.get("polish_total_activation_events", 0)),
++                            "polish_total_slsqp_iterations": int(mm_diag.get("polish_total_slsqp_iterations", 0)),
++                            "polish_total_newton_steps": int(mm_diag.get("polish_total_newton_steps", 0)),
++                            "polish_loglikelihood_increment": float(mm_diag.get("polish_loglikelihood_increment", 0.0)),
+                             **metrics,
+                         }
+                         if estimator == "ABC_union_sieve":
+@@ -7387,6 +7751,13 @@
+                                     "n_nontrivial_equivalence_classes": int(model.diagnostics["n_nontrivial_equivalence_classes"]),
+                                     "nontrivial_equivalence_class_mass_fraction": float(model.diagnostics.get("nontrivial_equivalence_class_mass_fraction", 0.0)),
+                                     "n_active_classes": int(mm_diag["n_active"]),
++                                    "hybrid_polish_used": bool(mm_diag.get("hybrid_polish_used", False)),
++                                    "polish_cycles": int(mm_diag.get("polish_cycles", 0)),
++                                    "polish_active_set_change_cycles": int(mm_diag.get("polish_active_set_change_cycles", 0)),
++                                    "polish_total_activation_events": int(mm_diag.get("polish_total_activation_events", 0)),
++                                    "polish_total_slsqp_iterations": int(mm_diag.get("polish_total_slsqp_iterations", 0)),
++                                    "polish_total_newton_steps": int(mm_diag.get("polish_total_newton_steps", 0)),
++                                    "polish_loglikelihood_increment": float(mm_diag.get("polish_loglikelihood_increment", 0.0)),
+                                     "fold_region_balance_max_range": int(fold_audit["maximum_region_count_range"]),
+                                 }
+                             )
+@@ -7476,10 +7847,22 @@
+         (abc_aonly["scope"] == "overall")
+         & (abc_aonly["bins_per_axis"] == args.primary_bins)
+     ].iloc[0]
++    solver_diagnostic_columns = [
++        "converged",
++        "active_score_residual",
++        "inactive_positive_score_violation",
++        "hybrid_polish_used",
++        "polish_cycles",
++        "polish_active_set_change_cycles",
++        "polish_total_activation_events",
++        "polish_total_slsqp_iterations",
++        "polish_total_newton_steps",
++        "polish_loglikelihood_increment",
++    ]
+     fit_diag = pd.concat(
+         [
+-            full_table[["converged", "active_score_residual", "inactive_positive_score_violation"]],
+-            cv_fold_table[["converged", "active_score_residual", "inactive_positive_score_violation"]],
++            full_table[solver_diagnostic_columns],
++            cv_fold_table[solver_diagnostic_columns],
+         ],
+         ignore_index=True,
+     )
+@@ -7587,6 +7970,20 @@
+         "bias_variance_identity_holds": bool(
+             float(bias_variance["identity_residual"].max()) < 1e-12
+         ),
++        "repeated_polish_cycle_diagnostics_finite": bool(
++            np.isfinite(fit_diag["polish_cycles"]).all()
++            and np.isfinite(fit_diag["polish_total_activation_events"]).all()
++        ),
++        "all_multiple_polish_cycle_fits_satisfy_KKT": bool(
++            (
++                fit_diag.loc[fit_diag["polish_cycles"] > 1, "active_score_residual"]
++                < args.score_tolerance
++            ).all()
++            and (
++                fit_diag.loc[fit_diag["polish_cycles"] > 1, "inactive_positive_score_violation"]
++                < args.score_tolerance
++            ).all()
++        ),
+     }
+     summary = {
+         "code_version": CONFIRMATORY_CODE_VERSION,
+@@ -7606,6 +8003,12 @@
+         "n_failed_fits": int(len(failures)),
+         "maximum_active_score_residual": float(fit_diag["active_score_residual"].max()),
+         "maximum_inactive_positive_score_violation": float(fit_diag["inactive_positive_score_violation"].max()),
++        "maximum_polish_cycles_used": int(fit_diag["polish_cycles"].max()),
++        "n_fits_requiring_hybrid_polish": int(fit_diag["hybrid_polish_used"].sum()),
++        "n_fits_requiring_multiple_polish_cycles": int((fit_diag["polish_cycles"] > 1).sum()),
++        "n_fits_with_active_set_change_during_polish": int((fit_diag["polish_active_set_change_cycles"] > 0).sum()),
++        "maximum_polish_activation_events": int(fit_diag["polish_total_activation_events"].max()),
++        "maximum_polish_loglikelihood_increment": float(fit_diag["polish_loglikelihood_increment"].max()),
+         "raw_nonfinite_CV_score_fraction": float(
+             cv_fold_table["raw_heldout_nonfinite_count"].sum()
+             / cv_fold_table["n_validation_rows"].sum()
+@@ -7652,6 +8055,7 @@
+         "CV_rule": "maximum observation-weighted out-of-fold conditional logscore pooled over all repeats and folds; numerical ties choose the coarser grid",
+         "truth_usage": "truth is used only after model fitting and CV selection, for CDF error and simulation-only oracle audits",
+         "predictive_stabilisation": "p_pred=(1-eta)p_hat+eta p_uniform with eta=c/(n_train+c), used only for predictive scores",
++        "numerical_solver_amendment": "Version 1.1 repeats SLSQP and projected Newton whenever polishing changes the active set; the frozen statistical analysis is unchanged.",
+     }
+     _write_json(paths["manifest"], manifest)
+     environment = {
+@@ -7675,7 +8079,7 @@
+     parser = argparse.ArgumentParser(
+         description="Independent-seed confirmatory Monte Carlo for the union-selection rectangular-sieve estimator"
+     )
+-    parser.add_argument("--outdir", default="union_selection_sieve_confirmatory_monte_carlo_outputs")
++    parser.add_argument("--outdir", default="union_selection_sieve_confirmatory_monte_carlo_v1_1_outputs")
+     parser.add_argument("--profile", choices=["smoke", "pilot", "confirmatory", "full"], default="confirmatory")
+     parser.add_argument("--conditions", nargs="+", default=None)
+     parser.add_argument("--bins-values", type=int, nargs="+", default=None)
+@@ -7699,6 +8103,7 @@
+     parser.add_argument("--mm-prepolish-iterations", type=int, default=2000)
+     parser.add_argument("--newton-tolerance", type=float, default=1e-12)
+     parser.add_argument("--polish-zero-tolerance", type=float, default=1e-13)
++    parser.add_argument("--max-polish-cycles", type=int, default=8)
+     parser.add_argument("--direct-audit-starts", type=int, default=4)
+     parser.add_argument("--progress-every", type=int, default=100)
+     parser.add_argument("--allow-nonfrozen-design", action="store_true")
+@@ -7733,6 +8138,12 @@
+         "n_failed_fits",
+         "maximum_active_score_residual",
+         "maximum_inactive_positive_score_violation",
++        "maximum_polish_cycles_used",
++        "n_fits_requiring_hybrid_polish",
++        "n_fits_requiring_multiple_polish_cycles",
++        "n_fits_with_active_set_change_during_polish",
++        "maximum_polish_activation_events",
++        "maximum_polish_loglikelihood_increment",
+         "raw_nonfinite_CV_score_fraction",
+         "fixed16_mean_cdf_rmse_regret",
+         "fixed16_fraction_within_5_percent_cdf_oracle",
+@@ -7775,7 +8186,7 @@
+     "UNION_SELECTION_CONFIRMATORY_PROFILE", "confirmatory"
+ )
+ ONE_CELL_CONFIRMATORY_ARGUMENTS = [
+-    "--outdir", "union_selection_sieve_confirmatory_monte_carlo_outputs",
++    "--outdir", "union_selection_sieve_confirmatory_monte_carlo_v1_1_outputs",
+     "--profile", ONE_CELL_CONFIRMATORY_PROFILE,
+     "--bins-values", "12", "16", "20",
+     "--primary-bins", "16",
+@@ -7791,6 +8202,7 @@
+     "--mm-prepolish-iterations", "2000",
+     "--newton-tolerance", "1e-12",
+     "--polish-zero-tolerance", "1e-13",
++    "--max-polish-cycles", "8",
+     "--direct-audit-starts", "4",
+     "--progress-every", "100",
+     "--resume",

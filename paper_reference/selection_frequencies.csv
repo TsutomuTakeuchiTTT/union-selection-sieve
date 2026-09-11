@@ -1,0 +1,10 @@
+selection_rule,bins_per_axis,fraction
+cdf_rmse_oracle,12,0.261111
+cdf_rmse_oracle,16,0.366667
+cdf_rmse_oracle,20,0.372222
+population_logscore_oracle,12,0.661111
+population_logscore_oracle,16,0.25
+population_logscore_oracle,20,0.088889
+repeat_averaged_cv_max,12,0.733333
+repeat_averaged_cv_max,16,0.205556
+repeat_averaged_cv_max,20,0.061111

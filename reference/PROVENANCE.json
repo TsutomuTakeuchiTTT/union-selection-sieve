@@ -1,0 +1,17 @@
+{
+  "archival_confirmatory_source": {
+    "path": "reference/confirmatory_v1_1/union_selection_sieve_confirmatory_monte_carlo_v1_1_onecell.py",
+    "sha256": "573f65696f232ec7e8f25945ada191d2fbfab533f8afd25d380f52bae9a9ac94",
+    "bytes": 365866
+  },
+  "import_safe_package_source": {
+    "path": "src/union_selection_sieve/_reference_impl.py",
+    "sha256": "08be482d2b1353bf0ab48839cc2396009121a986601c50a6323eaf74cd2033be",
+    "bytes": 366197
+  },
+  "archival_core_validation_source": {
+    "path": "reference/core_validation_v1/union_selection_rectangular_sieve_v1_onecell.py",
+    "sha256": "417a52ce1100d22acfa3bd11bd508e4a5e99ec1dcc70c03535d430e9dafe346b",
+    "bytes": 92108
+  }
+}

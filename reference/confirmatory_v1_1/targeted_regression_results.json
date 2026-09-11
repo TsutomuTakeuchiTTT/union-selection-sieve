@@ -1,0 +1,40 @@
+{
+  "active_score_residual_reduction_factor": 646243683970.4774,
+  "estimator_changed": false,
+  "loglikelihood_improvement_v1_1_minus_v1_0": 0.0002684055811705832,
+  "regression_identity": {
+    "bins_per_axis": 20,
+    "cv_repeat_zero_based": 2,
+    "fold_zero_based": 0,
+    "n_latent": 1500,
+    "n_training_rows": 874,
+    "replicate_zero_based": 3,
+    "rho": 0.55,
+    "training_seed": 20290933
+  },
+  "statistical_design_changed": false,
+  "version_1_0_stalled_result": {
+    "active_score_residual": 0.05094069783984512,
+    "code_version": "union-selection-sieve-confirmatory-monte-carlo-v1.0.0-onecell",
+    "converged": false,
+    "final_loglikelihood": -1.9036791188466813,
+    "inactive_positive_score_violation": 0.0,
+    "polish_activation_events": 1,
+    "polish_cycles": 1
+  },
+  "version_1_1_fixed_result": {
+    "active_score_residual": 7.882583474838611e-14,
+    "bins_per_axis": 20,
+    "converged": true,
+    "final_loglikelihood": -1.9034107132655107,
+    "fold": 0,
+    "inactive_positive_score_violation": 0.0,
+    "n_training_rows": 874,
+    "polish_cycles": 2,
+    "polish_total_activation_events": 1,
+    "polish_total_newton_steps": 10,
+    "polish_total_slsqp_iterations": 131,
+    "repeat": 2,
+    "training_seed": 20290933
+  }
+}

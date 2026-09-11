@@ -1,0 +1,11 @@
+test_cdf_identification_envelope (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_cdf_identification_envelope) ... ok
+test_complete_data_reduces_to_empirical_histogram (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_complete_data_reduces_to_empirical_histogram) ... ok
+test_gaussian_population_refinement_reduces_cdf_error (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_gaussian_population_refinement_reduces_cdf_error) ... ok
+test_piecewise_population_recovers_truth (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_piecewise_population_recovers_truth) ... ok
+test_region_b_and_c_analytic_integrals (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_region_b_and_c_analytic_integrals) ... ok
+test_selection_denominator_identity (test_union_selection_rectangular_sieve_v1.RectangularSieveTests.test_selection_denominator_identity) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.379s
+
+OK

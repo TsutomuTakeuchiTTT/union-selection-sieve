@@ -1,0 +1,5 @@
+selection_rule,mean_selected_bins,mean_cdf_rmse,mean_cdf_rmse_regret,se_cdf_rmse_regret,mean_relative_cdf_rmse_regret,fraction_within_5_percent_oracle,fraction_within_10_percent_oracle,mean_population_logscore_regret
+fixed_12,12.0,0.011439,0.000844,6.2e-05,0.101608,0.455556,0.594444,0.004923
+fixed_16,16.0,0.011111,0.000516,4.9e-05,0.054395,0.605556,0.794444,0.021997
+fixed_20,20.0,0.011162,0.000567,5.3e-05,0.0624,0.594444,0.761111,0.06352
+repeat_averaged_cv_max,13.311111,0.011275,0.000681,5.5e-05,0.078249,0.527778,0.7,0.003864

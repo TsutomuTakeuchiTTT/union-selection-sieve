@@ -1,0 +1,28 @@
+{
+  "outdir": "outputs/confirmatory",
+  "profile": "confirmatory",
+  "bins_values": [
+    12,
+    16,
+    20
+  ],
+  "primary_bins": 16,
+  "mixture_strength": 1.0,
+  "seed": 20260912,
+  "mass_tolerance": 1e-12,
+  "score_tolerance": 1e-09,
+  "prune_mass_tolerance": 1e-07,
+  "prune_score_margin": 1e-07,
+  "coverage_tolerance": 1e-15,
+  "warm_mixing": 1e-09,
+  "max_iterations": 30000,
+  "mm_prepolish_iterations": 2000,
+  "newton_tolerance": 1e-12,
+  "polish_zero_tolerance": 1e-13,
+  "max_polish_cycles": 8,
+  "direct_audit_starts": 4,
+  "progress_every": 100,
+  "resume": true,
+  "self_test": true,
+  "fail_fast": true
+}

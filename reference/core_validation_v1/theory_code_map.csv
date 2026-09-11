@@ -1,0 +1,20 @@
+Theory object,Mathematical definition,Code location,Validation
+Normalized rectangular basis,phi_k=1_Rk/|Rk|,RectangularGrid.density_row,basis normalization self-test
+Region A numerator,a_ik=phi_k(x1_i x2_i),RectangularGrid.density_row,numerator subset-selection audit
+Region B numerator,a_ik=integral_{x2<y2_i} phi_k(x1_i x2) dx2,RectangularGrid.region_b_subdensity_row,exact analytic integral self-test
+Region C numerator,a_ik=integral_{x1<y1_i} phi_k(x1 x2_i) dx1,RectangularGrid.region_c_subdensity_row,exact analytic integral self-test
+Selection denominator,b_ik=integral_{O_i} phi_k=1-lower-left cell fraction,RectangularGrid.selection_row,selection identity self-test
+Sieve CDF,F_p(x1 x2)=sum_k p_k int_{(-inf x1]x(-inf x2]} phi_k,RectangularGrid.cdf_row and RectangularGrid.cdf,population refinement audit
+Conditional log-likelihood,sum_i nu_i[log(a_i^T p)-log(b_i^T p)],conditional_loglikelihood,finite-difference and optimizer audits
+Score,sum_i nu_i a_ik/(a_i^T p)-sum_i nu_i b_ik/(b_i^T p),conditional_score,analytic score finite-difference test
+Hessian,-A^T diag(nu/(Ap)^2)A+B^T diag(nu/(Bp)^2)B,conditional_hessian,projected active-face diagnostics
+MM numerator,R_k=p_k sum_i nu_i a_ik/(a_i^T p),_mm_update_on_face,likelihood nondecrease audit
+MM denominator,D_k=sum_i nu_i b_ik/(b_i^T p),_mm_update_on_face,likelihood nondecrease audit
+MM normalization,p_new_k=R_k/(D_k+lambda) with sum p_new=1,_mm_update_on_face,probability normalization audit
+Boundary KKT,g_k=0 active and g_k<=0 inactive,kkt_diagnostics and fit_active_set_mm,active residual and inactive violation outputs
+Zero-numerator screening,zero numerator coverage and positive denominator implies forced zero,reduce_operator_columns,cell screening tables
+Invisible-cell detection,zero numerator and denominator coverage implies nonidentification,reduce_operator_columns,main benchmark requires zero invisible cells
+Operator equivalence,identical A and B columns identify only class total,reduce_operator_columns,equivalence class tables
+CDF identification envelope,class mass times min/max CDF coefficient,cdf_identification_envelope,envelope output and ordering checks
+Piecewise population benchmark,true density lies exactly in sieve,build_population_categories,population mass recovery and direct optimizer agreement
+Gaussian population refinement,true cell masses recovered and within-cell CDF approximation shrinks,TruncatedBivariateNormalTruth and cdf_accuracy_table,4/8/12 grid refinement tests

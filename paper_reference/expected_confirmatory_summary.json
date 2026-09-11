@@ -1,0 +1,60 @@
+{
+  "code_version": "union-selection-sieve-confirmatory-monte-carlo-v1.1.0-onecell",
+  "profile": "confirmatory",
+  "candidate_resolutions": [
+    12,
+    16,
+    20
+  ],
+  "primary_resolution": 16,
+  "conditions": [
+    [
+      0.55,
+      1500
+    ],
+    [
+      0.55,
+      3000
+    ],
+    [
+      0.55,
+      6000
+    ],
+    [
+      0.9,
+      1500
+    ],
+    [
+      0.9,
+      3000
+    ],
+    [
+      0.9,
+      6000
+    ]
+  ],
+  "replicates_per_condition": 30,
+  "cv_folds": 5,
+  "cv_repeats": 3,
+  "n_successful_full_fits": 1080,
+  "n_successful_cv_fits": 8100,
+  "n_failed_fits": 0,
+  "maximum_active_score_residual": 6.83729739492378e-10,
+  "maximum_inactive_positive_score_violation": 0.0,
+  "abc_minus_a_only_fixed16": {
+    "mean_abc_cdf_rmse": 0.011110742106636068,
+    "mean_aonly_cdf_rmse": 0.015340554240455346,
+    "mean_difference": -0.004229812133819276,
+    "ci95_low": -0.005164071078124685,
+    "ci95_high": -0.003295553189513868,
+    "fraction_abc_better": 0.7888888888888889
+  },
+  "fixed16": {
+    "mean_cdf_rmse_regret": 0.000516124701672984,
+    "mean_relative_cdf_rmse_regret": 0.05439466189167056,
+    "fraction_within_5_percent_oracle": 0.6055555555555555,
+    "fraction_within_10_percent_oracle": 0.7944444444444444,
+    "mean_population_logscore_regret": 0.021997091252201773
+  },
+  "prespecified_criterion_not_met": "fixed16_fraction_within_5_percent_of_oracle_at_least_0_75"
+}

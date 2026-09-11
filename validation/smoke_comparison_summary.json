@@ -1,0 +1,109 @@
+{
+  "ABC_minus_A_only_fixed16_mean_CDF_RMSE_difference": -0.0027982464003495043,
+  "all_main_checks_passed": true,
+  "candidate_resolutions": [
+    12,
+    16,
+    20
+  ],
+  "checks": {
+    "all_active_score_residuals_below_tolerance": true,
+    "all_full_and_cv_fits_converged": true,
+    "all_inactive_KKT_violations_below_tolerance": true,
+    "all_multiple_polish_cycle_fits_satisfy_KKT": true,
+    "all_stabilised_CV_scores_finite": true,
+    "bias_variance_identity_holds": true,
+    "candidate_resolution_set_is_frozen": true,
+    "confirmatory_seed_family_differs_from_development_runs": true,
+    "deployable_CV_selection_uses_no_truth": true,
+    "folds_region_balanced_within_one": true,
+    "no_failed_fits": true,
+    "predictive_mixture_used_only_for_scoring": true,
+    "repeated_polish_cycle_diagnostics_finite": true,
+    "self_tests_passed": true
+  },
+  "code_version": "union-selection-sieve-confirmatory-monte-carlo-v1.1.0-onecell",
+  "conditions": [
+    [
+      0.55,
+      1500
+    ],
+    [
+      0.9,
+      1500
+    ]
+  ],
+  "configuration_fingerprint": "4f33e4141d99becf81b4ad215d96d760ef67238e955202f83d40ecc1e114b964",
+  "cv_folds": 3,
+  "cv_repeats": 1,
+  "elapsed_seconds": 13.666672108000057,
+  "fixed16_fraction_within_5_percent_cdf_oracle": 0.75,
+  "fixed16_mean_cdf_rmse_regret": 0.0005432344492249555,
+  "fixed16_mean_relative_cdf_rmse_regret": 0.046619932896712735,
+  "maximum_active_score_residual": 2.4561597200545293e-10,
+  "maximum_inactive_positive_score_violation": 0.0,
+  "maximum_polish_activation_events": 0,
+  "maximum_polish_cycles_used": 0,
+  "maximum_polish_loglikelihood_increment": 0.0,
+  "n_failed_fits": 0,
+  "n_fits_requiring_hybrid_polish": 0,
+  "n_fits_requiring_multiple_polish_cycles": 0,
+  "n_fits_with_active_set_change_during_polish": 0,
+  "n_successful_cv_fits": 36,
+  "n_successful_full_fits": 24,
+  "population_validation_latent": 12000,
+  "prespecified_decision": {
+    "ABC_minus_A_only_fixed16_overall": {
+      "bins_per_axis": 16,
+      "ci95_high_difference": 0.003995650301827807,
+      "ci95_low_difference": -0.009592143102526814,
+      "fraction_abc_has_lower_rmse": 0.75,
+      "mean_abc_cdf_rmse": 0.015110122659205194,
+      "mean_aonly_cdf_rmse": 0.0179083690595547,
+      "mean_difference_abc_minus_aonly": -0.0027982464003495043,
+      "median_difference": -0.0030161470902972604,
+      "n_paired_catalogues": 4,
+      "scope": "overall",
+      "se_difference": 0.002134803245823075
+    },
+    "all_prespecified_descriptive_criteria_met": false,
+    "criteria": {
+      "ABC_fixed16_overall_mean_rmse_lower_than_A_only_fixed16": true,
+      "fixed16_each_condition_mean_relative_regret_at_most_0_10": true,
+      "fixed16_fraction_within_5_percent_of_oracle_at_least_0_75": true,
+      "fixed16_overall_mean_cdf_regret_no_larger_than_each_deployable_comparator": false,
+      "no_failed_fits_and_all_KKT_checks_pass": true
+    },
+    "fixed16_overall": {
+      "ci95_high_cdf_rmse_regret": 0.0012928251165435375,
+      "ci95_low_cdf_rmse_regret": -0.00020635621809362637,
+      "fraction_within_10_percent_cdf_oracle": 0.75,
+      "fraction_within_5_percent_cdf_oracle": 0.75,
+      "mean_cdf_rmse_regret": 0.0005432344492249555,
+      "mean_population_logscore_regret": 0.04229245915395535,
+      "mean_relative_cdf_rmse_regret": 0.046619932896712735,
+      "mean_selected_bins": 16.0,
+      "mean_selected_cdf_rmse": 0.015110122659205194,
+      "n_catalogues": 4,
+      "scope": "overall",
+      "se_cdf_rmse_regret": 0.00023553914046375643,
+      "se_population_logscore_regret": 0.00599991402837142
+    },
+    "interpretation": "A failed criterion is a scientific result, not a software failure."
+  },
+  "primary_resolution": 16,
+  "profile": "smoke",
+  "raw_nonfinite_CV_score_fraction": 0.033386327503974564,
+  "repeat_averaged_CV_mean_cdf_rmse_regret": 0.0,
+  "replicates": 2,
+  "scientific_scope": {
+    "A_only_baseline": true,
+    "general_optimality_theorem": false,
+    "independent_seed_confirmatory_monte_carlo": true,
+    "primary_CDF_resolution_fixed_at_16": true,
+    "repeated_CV_comparator": true,
+    "rules_frozen_before_new_catalogues": true,
+    "sieve_asymptotic_theory": false,
+    "simulation_only_oracles_not_deployable": true
+  }
+}
