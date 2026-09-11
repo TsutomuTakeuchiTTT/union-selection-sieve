@@ -7,8 +7,10 @@ authors:
     given-names: "Tsutomu T."
     orcid: "https://orcid.org/0000-0001-8416-7673"
 version: "1.0.0"
-date-released: "2026-09-11"
+doi: "10.5281/zenodo.22706383"
+date-released: 2026-09-11
 repository-code: "https://github.com/TsutomuTakeuchiTTT/union-selection-sieve"
+url: "https://doi.org/10.5281/zenodo.22706383"
 license: "BSD-3-Clause"
 abstract: >-
   Reference implementation of a bivariate conditional-likelihood rectangular-sieve
