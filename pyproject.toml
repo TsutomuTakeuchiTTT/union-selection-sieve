@@ -7,7 +7,7 @@ name = "union-selection-sieve"
 version = "1.0.0"
 description = "Conditional-likelihood rectangular-sieve estimation for bivariate union-selected samples"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {file = "LICENSE"}
 authors = [
   {name = "Tsutomu T. Takeuchi", email = "tsutomu.takeuchi.ttt@gmail.com"}
