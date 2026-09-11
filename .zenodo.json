@@ -1,6 +1,9 @@
 {
   "title": "Union-selection conditional-likelihood rectangular-sieve estimator",
+  "version": "1.0.0",
   "upload_type": "software",
+  "access_right": "open",
+  "language": "eng",
   "description": "Reference implementation accompanying the manuscript Bivariate Distribution Estimation under Truncation and One-Sided Censoring: A Conditional-Likelihood Sieve Method for Union-Selected Samples.",
   "creators": [
     {
@@ -12,9 +15,14 @@
   "license": "BSD-3-Clause",
   "keywords": [
     "conditional likelihood",
+    "union selection",
     "truncation",
     "one-sided censoring",
     "bivariate distribution",
-    "sieve estimation"
+    "sieve estimation",
+    "nonparametric maximum likelihood",
+    "incomplete data",
+    "survival analysis",
+    "luminosity function"
   ]
 }
